@@ -28,7 +28,7 @@ Wait with `--background`, never with a PR watch alone (T3's PR watch ends at mer
 deploy result would never reach you. Run `node .agents/shiplane/shiplane.mjs <n> --background` in a background shell (your
 harness's background command, e.g. Claude Code's `run_in_background`): it prints one line when it exits and you are
 woken then. Don't poll and don't sleep; `node .agents/shiplane/shiplane.mjs <n> --status` prints the last state without
-waiting. A PR watch next to it is fine (it reports review comments); it is not the wait. Several PRs: start each in its own background shell,
+waiting. A run can last up to ~5 h (4 h in the queue, 1 h for the deploy) and harnesses kill background shells at a default (Claude Code's Bash: 30 min), so start it with the longest background timeout (Claude Code Bash `timeout` up to 7200000 ms); if the shell is killed anyway, `--status` shows where it got to and running `node .agents/shiplane/shiplane.mjs <n> --background` again is safe (one run per PR; a dead run's lock is taken over, and an already merged PR goes straight to the deploy result). A PR watch next to it is fine (it reports review comments); it is not the wait. Several PRs: start each in its own background shell,
 close together, so Mergify tests them in one batch.
 Without being asked, use `--now` only when the ship branch is red, your PR fixes it, and no other open PR has `hotfix`.
 

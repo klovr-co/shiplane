@@ -14,6 +14,13 @@ test('keptIgnored ignores only regenerable directories', () => {
   assert.deepEqual(keptIgnored(out), ['.env', 'data/local.db']);
 });
 
+test('keptIgnored treats shiplane state and build outputs as regenerable, at any depth', () => {
+  const gone = ['!! .agents/state/', '!! .agents/state/ship-12.json', '!! apps/app/.open-next/', '!! apps/app/.open-next/foo', '!! apps/docs/.source/', '!! pkg/.agents/state/x.json'];
+  assert.deepEqual(keptIgnored([...gone, ''].join('\0')), []);
+  const kept = ['!! .env', '!! .agent-browser-profile/', '!! artifacts/', '!! .clerk/', '!! .agents/other/', '!! state/', '!! .agents/'];
+  assert.deepEqual(keptIgnored([...kept, ''].join('\0')), kept.map(e => e.slice(3)));
+});
+
 test('upkeep removes only the clean merged worktree; keeps unpushed, ignored .env and locked ones', () => {
   const root = tempRepo({ 'README.md': 'x\n', '.gitignore': '.env\nnode_modules/\n' });
   repos.push(root);
