@@ -44,10 +44,18 @@ The pre-push gate (`node .agents/shiplane/pre-push.mjs`, run by the hook) checks
 deletes, `git push origin HEAD:branch` included: no changed file may flip CRLF/LF or become mixed; each `generated`
 command must leave the tree unchanged; then `checkCommand` runs. In a fresh worktree without `node_modules` it says which install command to run.
 
+`queueCheckCommand` (default none) is the repo's full credential-free CI suite, too slow for every push. `shiplane ship <pr>`
+runs it once in the repo root before it posts `@mergifyio queue`, and again before re-queueing after a push (a new head
+needs its own pass). It refuses, with the step to take, unless the checkout is at the PR's head and the tree is clean. Output
+streams (to `.agents/state/queue-check-<pr>.log` with `--background`); `SHIPLANE_BASE_REF` and `SHIPLANE_SHIP_BRANCH` are set as for
+`checkCommand`. The sha that passed is remembered in `.agents/state/`, so running ship again for it skips the suite. A failure
+queues nothing and exits 2 with the command's exit code. `--now` runs it too: a hotfix still lands in the same CI. There is no
+skip flag; to bypass it for a PR, change the setting in a PR.
+
 ## Settings (`.agents/config.yml`)
 
 `shipTarget` (production | staging) · `branches: {production, staging}` · `needsOwner: {paths, categories}` ·
-`checkCommand` · `installCommand` · `generated: [{run}]` · `deployWorkflows` · `liveUrl` · `mergeMethod`
+`checkCommand` · `queueCheckCommand` · `installCommand` · `generated: [{run}]` · `deployWorkflows` · `liveUrl` · `mergeMethod`
 (squash | merge | rebase) · `ciCheck` (the gate job's name, which the queue waits for) · `owners` (GitHub logins: assigned
 `needs-owner` PRs and the red-live-branch issue) · `supersededSections` (AGENTS.md headings the shiplane block replaces;
 `[]` keeps them all) · `workflowHeader` (extra comment lines kept at the top of shiplane-events.yml, e.g. a repo's required

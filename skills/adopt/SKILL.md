@@ -1,6 +1,6 @@
 ---
 name: adopt
-description: Fit a repo to shiplane after `shiplane init` - put the CI gate into its existing workflow as its own PR, write the repo's pre-push checkCommand, wire the gate into its hook manager, and propose starter CI when it has none. Use when the user says adopt shiplane, set up shiplane, or when `shiplane init`/`shiplane doctor` reports a missing gate, checkCommand or hook.
+description: Fit a repo to shiplane after `shiplane init` - put the CI gate into its existing workflow as its own PR, write the repo's pre-push checkCommand and its before-queue queueCheckCommand, wire the gate into its hook manager, and propose starter CI when it has none. Use when the user says adopt shiplane, set up shiplane, or when `shiplane init`/`shiplane doctor` reports a missing gate, checkCommand or hook.
 ---
 
 # Adopting shiplane in a repo
@@ -31,6 +31,10 @@ The pre-push gate already checks line endings and `generated` outputs. `checkCom
 - Otherwise compose it from CI's cheapest jobs: lint, typecheck scoped to what changed, fast unit tests. Under ~2 minutes; no network, no secrets.
 - Committed generated files (API references, schema types): add each generator under `generated:` with `run:`.
 - Set `installCommand` only if detection is wrong (`shiplane setup` prints what it detected).
+
+## 2b. queueCheckCommand
+
+`shiplane ship` runs it once before it queues a PR (and again after each push), on a clean checkout of the PR head. Write it from what CI runs without credentials: the full lint, typecheck, build and test jobs, the same commands the workflow's steps run (prefer an existing script such as `pnpm ci:local`). Minutes are fine here; it runs once per head, not per push. Leave out jobs that need secrets, deploys, or a database that only CI has. If CI has no credential-free suite, leave it `null`.
 
 ## 3. Hook wiring
 
