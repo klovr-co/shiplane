@@ -52,6 +52,12 @@ streams (to `.agents/state/queue-check-<pr>.log` with `--background`); `SHIPLANE
 queues nothing and exits 2 with the command's exit code. `--now` runs it too: a hotfix still lands in the same CI. There is no
 skip flag; to bypass it for a PR, change the setting in a PR.
 
+Two guards on `shiplane ship <pr>` (queue wasted on 3ven, 5 Nov 2026). Push first: before the first queue command the checkout
+must be the PR's head with a clean tree (a push after queueing cancels the queue place), and a head updated in the last minute
+is given time to settle; with no checkout this is skipped and logged. Flake-safe: when Mergify dequeues a PR for a failed
+check, failures are counted per head sha in `.agents/state/queue-failed-<pr>.json`: a sha may be re-queued once after its first failure
+(a flake), and from the second failure ship refuses it (exit 2) until a new commit is pushed. A dequeue for a conflict, behind another PR, by hand or by a push does not count. There is no flag.
+
 ## Settings (`.agents/config.yml`)
 
 `shipTarget` (production | staging) · `branches: {production, staging}` · `needsOwner: {paths, categories}` ·

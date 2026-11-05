@@ -72,7 +72,7 @@ test('--status: running, done, gone, none; found from another worktree', () => {
 
 test('shiplane ship --background: no progress on the terminal, one result line, state and session written', async () => {
   const dir = repo();
-  const w = new World({ deploys: { 'deploy.yml': { conclusion: 'success' } } });
+  const w = new World({ pr: { headRefOid: testGit(dir, ['rev-parse', 'HEAD']).trim() }, deploys: { 'deploy.yml': { conclusion: 'success' } } }); // the checkout is the PR head
   const out = [];
   const err = [];
   const o = w.opts();
@@ -116,7 +116,7 @@ test('several shiplane ship processes recording one session at once lose no PR',
 
 test('one shiplane ship per PR: a second run exits 2 and leaves the first run\'s state alone; a stale lock is taken over', async () => {
   const dir = repo();
-  const w = new World({ deploys: { 'deploy.yml': { conclusion: 'success' } } });
+  const w = new World({ pr: { headRefOid: testGit(dir, ['rev-parse', 'HEAD']).trim() }, deploys: { 'deploy.yml': { conclusion: 'success' } } }); // the checkout is the PR head
   const o = w.opts();
   const run = extra => {
     const out = [];
