@@ -24,6 +24,14 @@ and one gate job is the check the queue waits for. Follow `templates/ci/gate.sni
 
 No CI at all: propose `templates/ci/starter-pnpm.yml` or `starter-bun.yml` (pick by lockfile), trimmed to the scripts `package.json` really has. Do not invent scripts.
 
+## 1b. Pipeline shape (before writing or changing CI)
+
+Read `pipeline-design.md` (next to this file) and apply it to what you propose: short critical-path jobs on hosted
+runners, heavy jobs on cheap (cold) machines, job count sized to the runner pool, browser suites out of the blocking
+queue, one ordered deploy workflow that deploys the queue's build and rolls back in the same job, and a speed guard
+next to any cost guard. When the repo already has CI, measure it first with the `diagnose` skill and list which
+rules it breaks in the PR.
+
 ## 2. checkCommand (in the gate PR or alone)
 
 The pre-push gate already checks line endings and `generated` outputs. `checkCommand` adds the repo's own cheap checks:
@@ -34,7 +42,7 @@ The pre-push gate already checks line endings and `generated` outputs. `checkCom
 
 ## 2b. queueCheckCommand
 
-`shiplane ship` runs it once before it queues a PR (and again after each push), on a clean checkout of the PR head. Write it from what CI runs without credentials: the full lint, typecheck, build and test jobs, the same commands the workflow's steps run (prefer an existing script such as `pnpm ci:local`). Minutes are fine here; it runs once per head, not per push. Leave out jobs that need secrets, deploys, or a database that only CI has. If CI has no credential-free suite, leave it `null`.
+`shiplane ship` runs it once before it queues a PR (and again after each push), on a clean checkout of the PR head. Write it from what CI runs without credentials: the full lint, typecheck, build and test jobs, the same commands the workflow's steps run (prefer an existing script such as `pnpm ci:local`). Minutes are fine here; it runs once per head, not per push. Leave out jobs that need secrets, deploys, or a database that only CI has, and leave out browser/end-to-end suites (one machine runs them one after another: ~1 h where CI spreads them; offer them behind a flag such as `--browser`). If CI has no credential-free suite, leave it `null`.
 
 ## 3. Hook wiring
 

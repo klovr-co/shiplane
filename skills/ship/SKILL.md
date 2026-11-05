@@ -38,6 +38,13 @@ Without being asked, use `--now` only when the ship branch is red, your PR fixes
 - UI changes: screenshots on the PR (`gh pr comment <n> --attach <image>`).
 - Changes matching `needsOwner` in the config: the PR has `needs-owner` and a first line `Needs owner: <the decision>` until the user says yes. `ship` reads the PR's files itself, before every queue command and after every push, and refuses a match unless the PR has `approved`.
 
+## Shaping the work before you ship
+
+- **Bundle related changes into one PR, one commit per fix.** Every PR is its own queue CI run and its own deploy; five small fixes as five PRs cost five of each. List each fix's files in the PR body so one fix can still be reverted by its files after a squash merge. Keep the repo's own split rules (e.g. CI changes never mixed with product code).
+- **Never push to a PR that is in the queue**: it cancels its place and restarts CI. Put the next change in a new PR (stack it on the queued branch if it depends on it) and ship it after.
+- **Deploy-workflow changes cannot run before merge.** Check statically what they need (every script a job runs and its imports are in that job's checkout; each job reads only its own environment's settings), ship them with a kill switch, and watch the first real deploy yourself.
+- **Delegated agents get a timebox** (~30–60 min to an open PR) and the minimum proof the repo's rules ask for. They never re-prove what CI already proves (whole suites, main is green), never run browser suites locally, and get new scope as a follow-up, not mid-run.
+
 ## Reading the result
 
 `ship` prints one line, and on failure one `next:` line. Do what `next:` says.

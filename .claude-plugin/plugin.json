@@ -1,7 +1,7 @@
 {
   "name": "shiplane",
   "version": "1.2.0",
-  "description": "Every agent PR in its own lane, landed in order and tracked to live: Mergify merge queue, pre-push gate, and `shiplane <pr>` (queue, re-queue after pushes, wait for merge and deploy). Skills: adopt, ship.",
+  "description": "Every agent PR in its own lane, landed in order and tracked to live: Mergify merge queue, pre-push gate, and `shiplane <pr>` (queue, re-queue after pushes, wait for merge and deploy). Skills: adopt, ship, diagnose.",
   "author": {
     "name": "klovr"
   },

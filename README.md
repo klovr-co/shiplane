@@ -87,7 +87,8 @@ payload and only send them back through the API; config values reach them as quo
 ## Skills
 
 - `adopt`: after `shiplane init`, fit the CI gate (`templates/ci/gate.snippet.yml`) into the repo's existing workflow as its own PR, write its `checkCommand`, wire the gate into its hook manager, or propose `templates/ci/starter-pnpm.yml` / `starter-bun.yml` when it has no CI.
-- `ship`: what to run when the user says ship, all, except #X, hold #X or now.
+- `ship`: what to run when the user says ship, all, except #X, hold #X or now, and how to shape the work first (bundle related fixes into one PR, never push to a queued PR).
+- `diagnose`: why shipping is slow, red or keeps regressing: measure wait vs work per job, time one change from queue to live, sort red runs, find why fixes come undone. The design rules it checks against are in `skills/adopt/pipeline-design.md` (machines cold/warm/hosted, what runs where, merge queue, deploy, guarding speed like cost).
 
 ## From tug
 
