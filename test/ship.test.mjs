@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { classify, dequeueReason, EXIT, ship, waitingFor } from '../lib/ship.mjs';
+import { classify, dequeueKind, dequeueReason, EXIT, ship, waitingFor } from '../lib/ship.mjs';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createQueueCheck } from '../lib/queue-check.mjs';
+import { createPushCheck, createQueueCheck } from '../lib/queue-check.mjs';
+import { queueFailures } from '../lib/state.mjs';
 import { CONFIG, World } from './fake-mergify.mjs';
 import { commit, removeRepo, tempRepo, testGit, writeFiles } from './helpers.mjs';
 
@@ -477,4 +478,171 @@ test('a queueCheckCommand with no checkout to run it in is an error, not a skipp
   const out = await ship(w.opts({ config: { ...CONFIG, queueCheckCommand: 'true' } }));
   assert.equal(out.code, EXIT.error);
   assert.equal(w.comments.length, 0);
+});
+
+// The re-queue guards: a real repo for the checkout, the fake Mergify for the PR.
+function guardWorld(worldOpts = {}) {
+  const dir = tempRepo();
+  const head = () => testGit(dir, ['rev-parse', 'HEAD']).trim();
+  const w = new World({ pr: { headRefOid: head() }, deploys: {}, ...worldOpts });
+  const logs = [];
+  const config = { ...CONFIG, deployWorkflows: [] };
+  const opts = (extra = {}) => w.opts({ config, log: t => logs.push(t), failures: queueFailures({ root: dir, number: 7 }), pushCheck: createPushCheck({ root: dir, number: 7 }), ...extra });
+  return { dir, w, opts, head, logs, done: () => removeRepo(dir) };
+}
+const CONFLICT = { title: 'Dequeued — conflict with base branch', summary: '**Reason**\n\nThe pull request conflicts with `main`' };
+
+test('dequeueKind: a failed check counts; conflicts, deferrals, manual dequeues and pushes do not', () => {
+  const k = (title, reason = '') => dequeueKind({ title, summary: reason ? `**Reason**\n\n${reason}\n` : '' });
+  assert.equal(k('Dequeued — checks failed', 'The merge conditions cannot be satisfied due to failing checks'), 'checks');
+  assert.equal(k('Dequeued — checks failed'), 'checks');
+  assert.equal(k('Left the queue', 'Checks timed out'), 'checks');
+  assert.equal(k('Dequeued — conflict with base branch', 'The pull request conflicts with `main`'), 'conflict');
+  assert.equal(k('Left the queue · conflict with base branch', 'The pull request conflicts with `main`'), 'conflict');
+  assert.equal(k('Dequeued — pull request ahead failed', 'A pull request ahead in the queue failed, so its checks were not run'), 'conflict');
+  assert.equal(k('Dequeued — pull request manually updated', 'The pull request has been manually updated'), 'other');
+  assert.equal(k('Dequeued — dequeue command', 'Dequeued by a `@mergifyio dequeue` command'), 'other');
+  assert.equal(k('Dequeued', 'something new'), 'other');
+  assert.equal(dequeueKind({ title: 'Dequeued', summary: '{"dequeue_reason": {"code": "CONFLICT_WITH_BASE_BRANCH"}}' }), 'conflict');
+});
+
+test('a failed-check dequeue is recorded; the first failure may be re-queued once, the second is refused, touching nothing', async () => {
+  const g = guardWorld();
+  try {
+    const store = () => queueFailures({ root: g.dir, number: 7 }).failed(g.head());
+    g.w.failBatch = true;
+    assert.equal((await ship(g.opts())).code, EXIT.dequeued);
+    assert.equal(store().count, 1);
+    assert.equal(store().reason, 'The merge conditions cannot be satisfied due to failing checks');
+    // First failure: allowed once, and says so.
+    g.w.checks.set(g.head(), g.w.check('completed', 'Merge queue is ready'));
+    const second = await ship(g.opts());
+    assert.equal(second.code, EXIT.dequeued, 'the re-queue went ahead and failed again');
+    assert.ok(g.logs.includes(`re-queueing ${g.head().slice(0, 7)} once: its queue CI failed once; a second failure needs a new commit`));
+    assert.equal(comments(g.w).length, 2);
+    assert.equal(store().count, 2);
+    // Second failure: refused.
+    const posts = comments(g.w).length;
+    const calls = g.w.calls.length;
+    const third = await ship(g.opts());
+    assert.equal(third.code, EXIT.refused);
+    assert.match(third.next, new RegExp(`^#7's head ${g.head().slice(0, 7)} already failed queue CI \\(The merge conditions cannot be satisfied due to failing checks\\); fix it, commit, push, then run shiplane 7 again`));
+    assert.match(third.next, /known flaky test, the fix is to fix or quarantine that test/);
+    assert.equal(comments(g.w).length, posts, 'no new queue command');
+    assert.equal(g.w.calls.length, calls, 'nothing labelled or posted');
+  } finally {
+    g.done();
+  }
+});
+
+test('a new sha resets the count: it may fail and be re-queued once again', async () => {
+  const g = guardWorld();
+  try {
+    const failures = queueFailures({ root: g.dir, number: 7 });
+    failures.record(g.head(), 'failing checks');
+    failures.record(g.head(), 'failing checks');
+    assert.equal((await ship(g.opts())).code, EXIT.refused);
+    const sha = commit(g.dir, { 'fix.txt': 'fix\n' }, 'fix');
+    g.w.pr.headRefOid = sha; // pushed
+    g.w.checks.set(sha, g.w.check('completed', 'Merge queue is ready'));
+    const out = await ship(g.opts());
+    assert.equal(out.code, EXIT.ok, out.line);
+    assert.equal(failures.failed(sha), null);
+  } finally {
+    g.done();
+  }
+});
+
+test('a dequeue for a conflict, a deferral behind another PR, or a manual dequeue does not block the next ship', async () => {
+  for (const reason of [CONFLICT, { title: 'Dequeued — pull request ahead failed', summary: '**Reason**\n\nThe checks were deferred: a pull request ahead of it in the queue failed' }, { title: 'Dequeued — dequeue command', summary: '**Reason**\n\nDequeued by a `@mergifyio dequeue` command' }]) {
+    const g = guardWorld();
+    try {
+      g.w.failBatch = reason;
+      const first = await ship(g.opts());
+      assert.equal(first.code, EXIT.dequeued);
+      assert.equal(queueFailures({ root: g.dir, number: 7 }).failed(g.head()), null, reason.title);
+      g.w.failBatch = false;
+      const again = await ship(g.opts());
+      assert.equal(again.code, EXIT.ok, `${reason.title}: ${again.line}`);
+    } finally {
+      g.done();
+    }
+  }
+});
+
+test('unpushed commits (or an uncommitted change) are refused before anything is posted', async () => {
+  const g = guardWorld();
+  try {
+    commit(g.dir, { 'late.txt': 'x\n' }, 'one more');
+    const out = await ship(g.opts());
+    assert.equal(out.code, EXIT.refused);
+    assert.match(out.line, /not queued: this checkout has commits that are not on the PR/);
+    assert.match(out.line, /a push after queueing cancels the queue place/);
+    assert.equal(out.next, 'git push, then run shiplane 7 again');
+    assert.deepEqual(g.w.calls, [], 'no label, no command');
+    testGit(g.dir, ['reset', '-q', '--hard', 'HEAD~1']);
+    writeFiles(g.dir, { 'README.md': 'edited\n' });
+    const dirty = await ship(g.opts());
+    assert.equal(dirty.code, EXIT.refused);
+    assert.match(dirty.line, /not committed/);
+    assert.deepEqual(g.w.calls, []);
+  } finally {
+    g.done();
+  }
+});
+
+test('with queueCheckCommand the head check is shared: no second HEAD check, the push check runs first', async () => {
+  const q = queueCheckWorld({ command: 'true' });
+  try {
+    commit(q.dir, { 'late.txt': 'x\n' }, 'one more');
+    const out = await ship({ ...q.opts(), pushCheck: createPushCheck({ root: q.dir, number: 7 }) });
+    assert.equal(out.code, EXIT.refused);
+    assert.match(out.line, /commits that are not on the PR/);
+    assert.equal(q.runs(), 0);
+  } finally {
+    q.done();
+  }
+});
+
+test('no checkout: the local part is skipped and logged, and it still queues', async () => {
+  const w = new World({ deploys: {} });
+  const logs = [];
+  const out = await ship(w.opts({ config: { ...CONFIG, deployWorkflows: [] }, log: t => logs.push(t) }));
+  assert.equal(out.code, EXIT.ok, out.line);
+  assert.ok(logs.some(l => /no checkout to check for unpushed commits; skipped/.test(l)));
+});
+
+test('settle: a head updated seconds ago waits out the settle period before the first command', async () => {
+  const g = guardWorld({ headAgeMs: 10_000 });
+  try {
+    const start = g.w.t;
+    const out = await ship(g.opts({ settleMs: 60_000 }));
+    assert.equal(out.code, EXIT.ok, out.line);
+    assert.equal(comments(g.w).length, 1, 'one command, not cancelled and posted again');
+    assert.ok(comments(g.w)[0].t - start >= 50_000, `posted ${(comments(g.w)[0].t - start) / 1000} s in`);
+    assert.ok(g.logs.some(l => /updated 10 s ago; waiting 50 s/.test(l)));
+  } finally {
+    g.done();
+  }
+});
+
+test('settle: a head older than the settle period is queued at once; a push during the wait stops it', async () => {
+  const old = guardWorld({ headAgeMs: 5 * 60_000 });
+  try {
+    const start = old.w.t;
+    assert.equal((await ship(old.opts({ settleMs: 60_000 }))).code, EXIT.ok);
+    assert.ok(comments(old.w)[0].t - start < 30_000);
+  } finally {
+    old.done();
+  }
+  const g = guardWorld({ headAgeMs: 10_000 });
+  try {
+    g.w.at(20_000, () => { g.w.pr.headRefOid = 'c'.repeat(40); });
+    const out = await ship(g.opts({ settleMs: 60_000 }));
+    assert.equal(out.code, EXIT.refused);
+    assert.match(out.line, /changed while waiting/);
+    assert.equal(comments(g.w).length, 0);
+  } finally {
+    g.done();
+  }
 });

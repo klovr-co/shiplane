@@ -2,7 +2,7 @@
 // the queue label alone queues nothing; a comment that is exactly "@mergifyio queue" does; a push dequeues the PR,
 // and a command posted before Mergify has registered that push is cancelled.
 export class World {
-  constructor({ pr = {}, registerDelayMs = 15_000, queueDelayMs = 10_000, mergeAfterMs = 20 * 60_000, ignoreComments = 0, deploys = {}, mergeSha = 'm'.repeat(40), otherHotfix = [], files = ['src/app.ts'], hotfixAt = {}, otherQueued = [], jobs = null } = {}) {
+  constructor({ pr = {}, registerDelayMs = 15_000, queueDelayMs = 10_000, mergeAfterMs = 20 * 60_000, ignoreComments = 0, deploys = {}, mergeSha = 'm'.repeat(40), otherHotfix = [], files = ['src/app.ts'], hotfixAt = {}, otherQueued = [], jobs = null, headAgeMs = 10 * 60_000 } = {}) {
     this.t = Date.parse('2026-10-29T08:00:00Z');
     this.pr = { number: 7, state: 'OPEN', isDraft: false, labels: [], headRefOid: 'a'.repeat(40), baseRefName: 'main', mergeCommit: null, url: 'https://github.com/o/r/pull/7', ...pr };
     this.checks = new Map([[this.pr.headRefOid, this.check('completed', 'Merge queue is ready')]]);
@@ -20,6 +20,7 @@ export class World {
     this.hotfixAt = hotfixAt; // { [n]: ms } when another PR got hotfix (default: a minute ago)
     this.otherQueued = otherQueued;
     this.jobs = jobs; // the deploy run's jobs (default: one deploy job that ran)
+    this.headAt = this.t - headAgeMs; // when the head sha was last updated (default: ten minutes ago)
     this.unregisteredPush = null; // the time of a push Mergify has not registered yet
     this.runs = new Map();
   }
@@ -42,6 +43,7 @@ export class World {
     const old = this.pr.headRefOid;
     const wasQueued = this.queued();
     this.pr.headRefOid = sha;
+    this.headAt = this.t;
     this.unregisteredPush = this.t;
     this.mergeTimer = null;
     this.at(this.registerDelayMs, () => {
@@ -56,6 +58,7 @@ export class World {
     return {
       pr: n => (n === undefined || n === w.pr.number ? { ...w.pr, labels: [...w.pr.labels] } : { number: n, state: 'OPEN', labels: ['hotfix'], headRefOid: `other${n}`, baseRefName: 'main' }),
       removeLabels: (_, labels) => { log('removeLabels', labels); w.pr.labels = w.pr.labels.filter(l => !labels.includes(l)); },
+      headUpdatedAt: () => w.headAt,
       prFiles: () => [...w.files],
       labelAddedAt: n => w.hotfixAt[n] ?? w.t - 60_000,
       runJobs: () => w.jobs ?? [{ name: 'deploy', conclusion: 'success' }],
@@ -75,7 +78,7 @@ export class World {
           const token = {};
           w.mergeTimer = token;
           if (w.failBatch) {
-            w.at(w.mergeAfterMs / 2, () => { if (w.mergeTimer === token) { w.checks.set(head, w.check('completed', 'Dequeued — checks failed', '**Reason**\n\nThe merge conditions cannot be satisfied due to failing checks')); w.mergeTimer = null; } });
+            w.at(w.mergeAfterMs / 2, () => { if (w.mergeTimer === token) { const f = w.failBatch === true ? { title: 'Dequeued — checks failed', summary: '**Reason**\n\nThe merge conditions cannot be satisfied due to failing checks' } : w.failBatch; w.checks.set(head, w.check('completed', f.title, f.summary)); w.mergeTimer = null; } });
           } else w.at(w.mergeAfterMs, () => {
             if (w.mergeTimer !== token || w.pr.headRefOid !== head) return;
             w.pr.state = 'MERGED';
