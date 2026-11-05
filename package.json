@@ -1,6 +1,6 @@
 {
   "name": "shiplane",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "description": "Every agent PR in its own lane, landed in order and tracked to live: a Mergify merge queue, a pre-push gate, and `shiplane <pr>`.",
   "type": "module",
   "license": "MIT",

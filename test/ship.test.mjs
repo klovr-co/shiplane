@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { classify, dequeueReason, EXIT, ship, waitingFor } from '../lib/ship.mjs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { createQueueCheck } from '../lib/queue-check.mjs';
 import { CONFIG, World } from './fake-mergify.mjs';
+import { commit, removeRepo, tempRepo, testGit, writeFiles } from './helpers.mjs';
 
 const comments = w => w.comments.filter(c => c.body === '@mergifyio queue');
 
@@ -328,4 +333,148 @@ test('deployJobsSkipped tells deploy jobs from the jobs that pick them', async (
   assert.equal(deployJobsSkipped([{ name: 'Deploy Convex + Cloudflare Worker', conclusion: 'success' }]), false);
   assert.equal(deployJobsSkipped([{ name: 'Choose what to deploy', conclusion: 'success' }, { name: 'Deploy web', conclusion: 'skipped' }, { name: 'Deploy backend', conclusion: 'success' }]), false);
   assert.equal(deployJobsSkipped([]), false);
+});
+
+// queueCheckCommand: a real repo for the checkout, the fake Mergify for the PR. The command counts its runs in a file
+// outside the repo (a file inside would make the tree dirty).
+function queueCheckWorld({ command }) {
+  const dir = tempRepo();
+  const counter = mkdtempSync(join(tmpdir(), 'shiplane-test-count-'));
+  const ran = join(counter, 'ran');
+  const head = () => testGit(dir, ['rev-parse', 'HEAD']).trim();
+  const config = { ...CONFIG, deployWorkflows: [], queueCheckCommand: `echo run >> ${ran}; ${command}` };
+  const w = new World({ pr: { headRefOid: head() } });
+  const logs = [];
+  const opts = (world = w, extra = {}) => ({ ...world.opts({ config, log: t => logs.push(t), ...extra }), queueCheck: createQueueCheck({ root: dir, number: 7, config, log: t => logs.push(t) }) });
+  const runs = () => {
+    try {
+      return readFileSync(ran, 'utf8').split('\n').filter(Boolean).length;
+    } catch {
+      return 0;
+    }
+  };
+  const done = () => {
+    removeRepo(dir);
+    rmSync(counter, { recursive: true, force: true });
+  };
+  return { dir, w, opts, runs, logs, head, done, config };
+}
+
+test('queueCheckCommand passes: runs once in the repo root with the ship env, then queues', async () => {
+  const q = queueCheckWorld({ command: 'test "$SHIPLANE_SHIP_BRANCH" = main && test "$SHIPLANE_BASE_REF" = refs/remotes/origin/main && test -f README.md' });
+  try {
+    const out = await ship(q.opts());
+    assert.equal(out.code, EXIT.ok, out.line);
+    assert.equal(q.runs(), 1);
+    assert.equal(comments(q.w).length, 1);
+    assert.ok(q.logs.some(l => /queue check passed/.test(l)));
+  } finally {
+    q.done();
+  }
+});
+
+test('queueCheckCommand fails: nothing is posted or labelled, exit 2 with the command\'s code', async () => {
+  const q = queueCheckWorld({ command: 'exit 7' });
+  try {
+    const out = await ship(q.opts());
+    assert.equal(out.code, EXIT.refused);
+    assert.match(out.line, /not queued: queueCheckCommand failed \(exit 7\)/);
+    assert.match(out.next, /fix, commit, push, run shiplane 7 again/);
+    assert.equal(q.w.comments.length, 0);
+    assert.ok(!q.w.calls.some(c => ['addLabels', 'ready'].includes(c.name)));
+  } finally {
+    q.done();
+  }
+});
+
+test('queueCheckCommand refuses a checkout that is not the PR head, without running anything', async () => {
+  const q = queueCheckWorld({ command: 'true' });
+  try {
+    q.w.pr.headRefOid = 'c'.repeat(40);
+    q.w.checks.set(q.w.pr.headRefOid, q.w.check('completed', 'Merge queue is ready'));
+    const out = await ship(q.opts());
+    assert.equal(out.code, EXIT.refused);
+    assert.match(out.line, /must run on the PR's head ccccccc, but this checkout is at/);
+    assert.match(out.next, /gh pr checkout 7/);
+    assert.equal(q.runs(), 0);
+    assert.equal(q.w.comments.length, 0);
+  } finally {
+    q.done();
+  }
+});
+
+test('queueCheckCommand refuses a dirty tree, without running anything', async () => {
+  const q = queueCheckWorld({ command: 'true' });
+  try {
+    writeFiles(q.dir, { 'notes.txt': 'wip\n' });
+    const out = await ship(q.opts());
+    assert.equal(out.code, EXIT.refused);
+    assert.match(out.line, /clean tree, but 1 file\(s\) are changed \(notes\.txt\)/);
+    assert.match(out.next, /commit them/);
+    assert.equal(q.runs(), 0);
+    assert.equal(q.w.comments.length, 0);
+  } finally {
+    q.done();
+  }
+});
+
+test('queueCheckCommand: the same sha is not checked twice, and says so; a changed command is a new check', async () => {
+  const q = queueCheckWorld({ command: 'true' });
+  try {
+    assert.equal((await ship(q.opts())).code, EXIT.ok);
+    const out = await ship(q.opts(new World({ pr: { headRefOid: q.head() } })));
+    assert.equal(out.code, EXIT.ok, out.line);
+    assert.equal(q.runs(), 1);
+    assert.ok(q.logs.some(l => /already passed for .*not running it again/.test(l)));
+    q.config.queueCheckCommand += '; true';
+    assert.equal((await ship(q.opts(new World({ pr: { headRefOid: q.head() } })))).code, EXIT.ok);
+    assert.equal(q.runs(), 2);
+  } finally {
+    q.done();
+  }
+});
+
+test('queueCheckCommand: a push is checked again before the re-queue; a failure then disarms', async () => {
+  const q = queueCheckWorld({ command: 'test ! -e bad' });
+  try {
+    q.w.at(5 * 60_000, () => q.w.push(commit(q.dir, { 'a.txt': 'a\n' })));
+    const out = await ship(q.opts());
+    assert.equal(out.code, EXIT.ok, out.line);
+    assert.equal(q.runs(), 2);
+    assert.equal(comments(q.w).length, 2);
+    assert.equal(comments(q.w)[1].head, q.head());
+  } finally {
+    q.done();
+  }
+  const bad = queueCheckWorld({ command: 'test ! -e bad' });
+  try {
+    bad.w.at(5 * 60_000, () => bad.w.push(commit(bad.dir, { bad: 'x\n' })));
+    const out = await ship(bad.opts());
+    assert.equal(out.code, EXIT.refused);
+    assert.match(out.line, /queueCheckCommand failed \(exit 1\)/);
+    assert.equal(bad.runs(), 2);
+    assert.equal(comments(bad.w).length, 1);
+    assert.ok(bad.w.comments.some(c => c.body === '@mergifyio dequeue'));
+  } finally {
+    bad.done();
+  }
+});
+
+test('queueCheckCommand also runs for --now', async () => {
+  const q = queueCheckWorld({ command: 'exit 3' });
+  try {
+    const out = await ship(q.opts(undefined, { now: true }));
+    assert.equal(out.code, EXIT.refused);
+    assert.equal(q.runs(), 1);
+    assert.equal(q.w.comments.length, 0);
+  } finally {
+    q.done();
+  }
+});
+
+test('a queueCheckCommand with no checkout to run it in is an error, not a skipped check', async () => {
+  const w = new World();
+  const out = await ship(w.opts({ config: { ...CONFIG, queueCheckCommand: 'true' } }));
+  assert.equal(out.code, EXIT.error);
+  assert.equal(w.comments.length, 0);
 });

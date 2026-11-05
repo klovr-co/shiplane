@@ -15,6 +15,7 @@ test('the config template renders every key and reads back as the same settings'
     shipTarget: 'staging',
     branches: { production: 'main', staging: 'staging' },
     checkCommand: 'node scripts/check-before-push.mjs --hook',
+    queueCheckCommand: 'pnpm lint && pnpm test',
     generated: [{ run: 'node scripts/generate-api-reference.mjs' }],
     deployWorkflows: ['deploy-web.yml', 'deploy-backend.yml'],
     liveUrl: 'https://staging.example.com',
@@ -27,14 +28,17 @@ test('the config template renders every key and reads back as the same settings'
   assert.equal(shipBranch(back), 'staging');
   assert.deepEqual(back.deployWorkflows, ['deploy-web.yml', 'deploy-backend.yml']);
   assert.deepEqual(back.generated, [{ run: 'node scripts/generate-api-reference.mjs' }]);
+  assert.equal(back.queueCheckCommand, 'pnpm lint && pnpm test');
+  assert.equal(parseConfig(renderConfig(DEFAULTS)).queueCheckCommand, null);
   assert.equal(back.mergeMethod, 'merge');
   assert.equal(back.ciCheck, 'Lint + Typecheck + Build');
-  for (const key of ['shipTarget', 'branches', 'needsOwner', 'checkCommand', 'deployWorkflows', 'liveUrl', 'mergeMethod']) assert.ok(key in parseYaml(text), key);
+  for (const key of ['shipTarget', 'branches', 'needsOwner', 'checkCommand', 'queueCheckCommand', 'deployWorkflows', 'liveUrl', 'mergeMethod']) assert.ok(key in parseYaml(text), key);
 });
 
 test('config validation', () => {
   assert.throws(() => parseConfig('shipTarget: prod\n'), /production or staging/);
   assert.throws(() => parseConfig('mergeMethod: fast\n'), /mergeMethod/);
+  assert.throws(() => parseConfig('queueCheckCommand: [a, b]\n'), /queueCheckCommand must be a command/);
   assert.throws(() => shipBranch(parseConfig('shipTarget: staging\nbranches:\n  staging: null\n')), /branches.staging is not set/);
 });
 

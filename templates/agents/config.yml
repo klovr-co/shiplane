@@ -19,6 +19,11 @@ needsOwner:
 # passed through). null: none. The adopt skill writes it from what CI runs cheaply.
 checkCommand: {{checkCommand}}
 
+# The repo's full credential-free CI suite, too slow for every push: `shiplane ship` runs it once in the repo root before it
+# posts @mergifyio queue (and again before each re-queue after a push), on a clean checkout of the PR's head, with
+# SHIPLANE_BASE_REF and SHIPLANE_SHIP_BRANCH set. A sha that passed is not run again. null: none. The adopt skill writes it.
+queueCheckCommand: {{queueCheckCommand}}
+
 # How a fresh worktree installs dependencies. null: shiplane detects it from the lockfile and version pins.
 installCommand: {{installCommand}}
 
