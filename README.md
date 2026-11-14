@@ -67,6 +67,10 @@ check, failures are counted per head sha in `.agents/state/queue-failed-<pr>.jso
 `[]` keeps them all) · `workflowHeader` (extra comment lines kept at the top of shiplane-events.yml, e.g. a repo's required
 `# Dry run:` and `# Revert:` lines; existing `# Dry run:`/`# Revert:` lines there are kept on re-render too).
 
+## Pull requests
+
+The AGENTS.md block carries a `### Pull requests` guideline: write for the owner, who checks behaviour, not code (ASD-STE100, a `> [!IMPORTANT]` "What I need from you" box at the top, at most 3 fixes and about 400 lines, one commit per fix, Mermaid diagrams for rules and flows). `shiplane init` installs `.github/pull_request_template.md` (in the `.github/` PR) only when the repo has no PR template; one that exists is kept, with a note. `shiplane doctor` warns when there is none. A repo with its own "Pull requests" section in AGENTS.md can list that heading in `supersededSections` so init removes the duplicate.
+
 ## Events (`.github/workflows/shiplane-events.yml`)
 
 Built-in `GITHUB_TOKEN`, `permissions: {}` at the top and the least per job, `ubuntu-slim`, `timeout-minutes: 2`,

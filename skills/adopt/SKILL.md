@@ -51,4 +51,6 @@ The pre-push gate already checks line endings and `generated` outputs. `checkCom
 
 `shiplane init` added the shiplane block and removed the hand-written sections it supersedes (`supersededSections` in the config: "Ship target", "Merging", "Merging: the merge queue", "Done means checked"), listing them in its PR. Other old sections that repeat or contradict it can go too, with the owner's yes; keep repo-specific facts (deploy workflows, proof rules) by moving them into `.agents/config.yml` or a short line under the block.
 
+The block also has a `### Pull requests` guideline (ASD-STE100 text, a "What I need from you" box at the top, small PRs, one commit per fix, Mermaid diagrams). Init adds `.github/pull_request_template.md` (in the `.github/` PR) only when the repo has no PR template; an existing one is kept, with a note to adopt shiplane's. A repo with its own hand-written "Pull requests" section in AGENTS.md (aldrent has one) lists its heading in `supersededSections` in `.agents/config.yml`, and init removes the duplicate.
+
 Finish with `shiplane doctor`: every line `ok`, or a sentence in the PR on why not.
