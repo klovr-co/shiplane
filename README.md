@@ -67,13 +67,17 @@ check, failures are counted per head sha in `.agents/state/queue-failed-<pr>.jso
 `[]` keeps them all) · `workflowHeader` (extra comment lines kept at the top of shiplane-events.yml, e.g. a repo's required
 `# Dry run:` and `# Revert:` lines; existing `# Dry run:`/`# Revert:` lines there are kept on re-render too).
 
+## Pull requests
+
+The AGENTS.md block carries a `### Pull requests` guideline: write for the owner, who checks behaviour, not code (ASD-STE100, a `> [!IMPORTANT]` "What I need from you" box at the top, at most 3 fixes and about 400 lines, one commit per fix, Mermaid diagrams for rules and flows). `shiplane init` installs `.github/pull_request_template.md` (in the `.github/` PR) only when the repo has no PR template; one that exists is kept, with a note. `shiplane doctor` warns when there is none. A repo with its own "Pull requests" section in AGENTS.md can list that heading in `supersededSections` so init removes the duplicate.
+
 ## Events (`.github/workflows/shiplane-events.yml`)
 
 Built-in `GITHUB_TOKEN`, `permissions: {}` at the top and the least per job, `ubuntu-slim`, `timeout-minutes: 2`,
 `actions/github-script` pinned by SHA and nothing else. The scripts read titles, bodies and branch names from the event
 payload and only send them back through the API; config values reach them as quoted env values (a value containing
 `${{` is refused).
-- `pull_request_target` labeled `needs-owner`: assign `owners`, comment "Needs your decision: <first line of the body>"; `hold`: "On hold. Say ship to release it."
+- `pull_request_target` labeled `needs-owner`: assign `owners`, comment "Needs your decision: <the \"Needs owner:\" line of the body>"; `hold`: "On hold. Say ship to release it."
 - `workflow_run` of each `deployWorkflows` file (matched by its `name:`) on the ship branch: "Deployed ✓ <sha> → <liveUrl>", "Not deployed: every deploy job was skipped…", or "Deploy failed: <run url>", on the PR of that commit.
 - `workflow_run` of the CI workflow (the one with a job named `ciCheck`) failing on the ship branch: opens or updates one issue "Live branch is red" assigned to `owners`; closes it when the branch is green again. Only fires when that workflow runs on pushes to the ship branch.
 

@@ -10,7 +10,7 @@ branches:
   production: {{production}}
   staging: {{staging}}
 
-# Changes that wait for the owner's yes: label needs-owner and a first line "Needs owner: <the decision>".
+# Changes that wait for the owner's yes: label needs-owner and the line "Needs owner: <the decision>" in the IMPORTANT box at the top of the PR.
 needsOwner:
   paths:{{needsOwnerPaths}}
   categories:{{needsOwnerCategories}}
