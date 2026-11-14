@@ -47,3 +47,15 @@ test('broken markers throw instead of guessing', () => {
   assert.throws(() => upsertAgentsBlock('<!-- shiplane:start v1 -->\n<!-- shiplane:end -->\n<!-- shiplane:start v1 -->\n<!-- shiplane:end -->\n', block), /more than one/);
   assert.throws(() => upsertAgentsBlock('text\n<!-- shiplane:end -->\n', block), /without <!-- shiplane:start -->/);
 });
+
+test('the block carries the Pull requests guideline, rebasing on the ship branch, and rules 4 and 8 point at the IMPORTANT box', () => {
+  const section = block.slice(block.indexOf('### Pull requests'), block.indexOf('<!-- shiplane:end -->'));
+  assert.ok(section.startsWith('### Pull requests\nWrite each PR for the owner, who checks behaviour, not code. Use .github/pull_request_template.md.\n- Language: ASD-STE100.'));
+  assert.equal(section.split('\n').filter(l => l.startsWith('- ')).length, 5, 'language, top, size, commits, diagrams');
+  assert.match(section, /`GIT_SEQUENCE_EDITOR=: git rebase -i --autosquash origin\/staging`\)\. Rebase on origin\/staging; do not merge it into the branch\./);
+  assert.match(section, /`> \[!IMPORTANT\]` box when the owner must act \(a decision is "Needs owner: <question>"\), or a `> \[!NOTE\]` box with "Nothing\. Safe to merge\."/);
+  assert.match(section, /`classDef changed fill:#f59e0b33,stroke:#f59e0b,stroke-width:2px`/);
+  assert.match(block, /^4\. .*the line "Needs owner: <the decision>" in the `> \[!IMPORTANT\]` box at the top of the PR\./m);
+  assert.match(block, /^8\. .*"Needs owner: <the question>" in the `> \[!IMPORTANT\]` box at the top\)/m);
+  assert.ok(!/first line/.test(block));
+});

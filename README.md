@@ -73,7 +73,7 @@ Built-in `GITHUB_TOKEN`, `permissions: {}` at the top and the least per job, `ub
 `actions/github-script` pinned by SHA and nothing else. The scripts read titles, bodies and branch names from the event
 payload and only send them back through the API; config values reach them as quoted env values (a value containing
 `${{` is refused).
-- `pull_request_target` labeled `needs-owner`: assign `owners`, comment "Needs your decision: <first line of the body>"; `hold`: "On hold. Say ship to release it."
+- `pull_request_target` labeled `needs-owner`: assign `owners`, comment "Needs your decision: <the \"Needs owner:\" line of the body>"; `hold`: "On hold. Say ship to release it."
 - `workflow_run` of each `deployWorkflows` file (matched by its `name:`) on the ship branch: "Deployed ✓ <sha> → <liveUrl>", "Not deployed: every deploy job was skipped…", or "Deploy failed: <run url>", on the PR of that commit.
 - `workflow_run` of the CI workflow (the one with a job named `ciCheck`) failing on the ship branch: opens or updates one issue "Live branch is red" assigned to `owners`; closes it when the branch is green again. Only fires when that workflow runs on pushes to the ship branch.
 

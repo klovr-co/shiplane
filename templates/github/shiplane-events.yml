@@ -1,6 +1,6 @@
 # Managed by shiplane {{version}} from .agents/config.yml: `shiplane init` rewrites this file. Change the config, not this file.
 # GitHub tells people what happened, so nobody has to ask "status?" or "is it live?":
-#   - a PR labelled needs-owner is assigned to `owners` with "Needs your decision: <first line of the PR body>";
+#   - a PR labelled needs-owner is assigned to `owners` with "Needs your decision: <the "Needs owner:" line of the PR body>";
 #   - a PR labelled hold gets "On hold. Say ship to release it.";
 #   - each deploy workflow run on {{shipBranch}} comments on its PR: deployed (or every deploy job skipped), or failed;
 #   - the CI workflow failing on {{shipBranch}} opens (or updates) one issue "Live branch is red", assigned to `owners`.
@@ -35,9 +35,11 @@ jobs:
             const comment = body => github.rest.issues.createComment({ owner, repo, issue_number: pr.number, body });
             if (label === 'needs-owner') {
               if (owners.length) await github.rest.issues.addAssignees({ owner, repo, issue_number: pr.number, assignees: owners });
-              const first = String(pr.body || '').split(/\r?\n/).map(l => l.trim()).find(Boolean) || String(pr.title || '');
+              // The decision is the "Needs owner: ..." line (in the IMPORTANT box at the top of the PR); else the first line.
+              const lines = String(pr.body || '').split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+              const first = lines.find(l => /needs owner:/i.test(l)) || lines[0] || String(pr.title || '');
               // "@" + zero-width space: the bot repeating the body must not notify the people or teams it names.
-              const decision = first.replace(/^needs owner:\s*/i, '').slice(0, 500).replace(/@(?=[\w-])/g, '@\u200b');
+              const decision = first.replace(/^.*?needs owner:\s*/i, '').slice(0, 500).replace(/@(?=[\w-])/g, '@\u200b');
               await comment(`Needs your decision: ${decision}`);
             } else if (label === 'hold') {
               await comment('On hold. Say ship to release it.');

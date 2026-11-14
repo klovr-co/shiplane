@@ -36,7 +36,7 @@ Without being asked, use `--now` only when the ship branch is red, your PR fixes
 - The pre-push gate passed on your last push (never `--no-verify`).
 - Another agent reviewed the diff (`git diff origin/<ship branch>...HEAD`); blockers and majors are fixed.
 - UI changes: screenshots on the PR (`gh pr comment <n> --attach <image>`).
-- Changes matching `needsOwner` in the config: the PR has `needs-owner` and a first line `Needs owner: <the decision>` until the user says yes. `ship` reads the PR's files itself, before every queue command and after every push, and refuses a match unless the PR has `approved`.
+- Changes matching `needsOwner` in the config: the PR has `needs-owner` and the line `Needs owner: <the decision>` in the `> [!IMPORTANT]` box at the top of the PR body until the user says yes. `ship` reads the PR's files itself, before every queue command and after every push, and refuses a match unless the PR has `approved`.
 
 ## Reading the result
 

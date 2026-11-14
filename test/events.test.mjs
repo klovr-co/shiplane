@@ -118,6 +118,8 @@ test('label script: needs-owner assigns the owners and quotes the first body lin
   assert.equal(calls[1].args.body, `Needs your decision: drop the ${hostile} table?`);
   const mention = await runScript(src, { env, payload: { label: { name: 'needs-owner' }, pull_request: { number: 9, body: 'Needs owner: ask @org/team and @alice' } } });
   assert.equal(mention.at(-1).args.body, 'Needs your decision: ask @\u200borg/team and @\u200balice', 'repeating the body notifies nobody');
+  const boxed = await runScript(src, { env, payload: { label: { name: 'needs-owner' }, pull_request: { number: 9, body: '> [!IMPORTANT]\n> **What I need from you:** Needs owner: drop the table?\n\n**Why:** x' } } });
+  assert.equal(boxed.at(-1).args.body, 'Needs your decision: drop the table?', 'the line in the IMPORTANT box, not its first line');
   const noBody = await runScript(src, { env: { SHIPLANE_OWNERS: '[]' }, payload: { label: { name: 'needs-owner' }, pull_request: { number: 9, title: hostile, body: null } } });
   assert.deepEqual(noBody.map(c => c.name), ['createComment'], 'no owners: nobody assigned');
   assert.equal(noBody[0].args.body, `Needs your decision: ${hostile}`);
