@@ -3,6 +3,7 @@ import test from 'node:test';
 import { LABELS, planInit, RUNTIME_FILES } from '../lib/init.mjs';
 import { parseConfig } from '../lib/config.mjs';
 import { VERSION } from '../lib/version.mjs';
+import { template } from '../lib/render.mjs';
 import { memReader } from './helpers.mjs';
 
 const byPath = plan => Object.fromEntries(plan.files.map(f => [f.path, f]));
@@ -19,7 +20,7 @@ test('a bare repo: config, AGENTS.md, gate, .githooks hook, .mergify.yml, lock; 
   assert.ok(plan.notes.some(n => /gate|mergify\/merge-queue/.test(n)));
   assert.ok(Object.keys(files).every(p => p.startsWith('.agents/') || p.startsWith('.githooks/') || ['AGENTS.md', '.mergify.yml', '.gitignore', '.claude/settings.json', '.codex/hooks.json'].includes(p)), 'kit files stay under .agents/ and .githooks/ (plus the project-level hooks)');
   assert.equal(files['.gitignore'].content, '.agents/state/\n');
-  assert.deepEqual(plan.ciFiles.map(f => f.path), ['.github/workflows/shiplane-events.yml'], 'the events workflow is its own change');
+  assert.deepEqual(plan.ciFiles.map(f => f.path), ['.github/workflows/shiplane-events.yml', '.github/pull_request_template.md'], 'the events workflow and the PR template are their own change (.github/)');
   assert.ok(!files['.github/workflows/shiplane-events.yml']);
   assert.ok(plan.notes.some(n => /owners is empty/.test(n)));
 });
@@ -67,9 +68,9 @@ test('the events workflow: rendered from the config, kept when it is the repo\'s
   assert.match(plan.ciFiles[0].content, /- "Deploy"/);
   assert.ok(!plan.notes.some(n => /owners is empty/.test(n)));
   const own = planInit({ reader: memReader({ ...tree, '.github/workflows/shiplane-events.yml': 'name: mine\n' }), defaultBranch: 'main' });
-  assert.deepEqual(own.ciFiles, []);
+  assert.deepEqual(own.ciFiles.map(f => f.path), ['.github/pull_request_template.md'], 'only the template');
   assert.ok(own.skipped.some(s => s.path === '.github/workflows/shiplane-events.yml'));
-  const done = planInit({ reader: memReader({ ...tree, '.gitignore': '/.agents/state/\n', '.github/workflows/shiplane-events.yml': plan.ciFiles[0].content }), defaultBranch: 'main' });
+  const done = planInit({ reader: memReader({ ...tree, '.gitignore': '/.agents/state/\n', '.github/workflows/shiplane-events.yml': plan.ciFiles[0].content, '.github/pull_request_template.md': plan.ciFiles[1].content }), defaultBranch: 'main' });
   assert.ok(!byPath(done)['.gitignore']);
   assert.deepEqual(done.ciFiles, []);
 });
@@ -78,4 +79,24 @@ test('owners must be GitHub logins', () => {
   assert.deepEqual(parseConfig('owners: ["@octocat", a-b]\n').owners, ['octocat', 'a-b']);
   assert.deepEqual(parseConfig(null).owners, []);
   for (const bad of ['owners: octocat\n', 'owners: ["-x"]\n', 'owners: ["a--b"]\n', 'owners: ["$(id)"]\n', 'owners: [1]\n']) assert.throws(() => parseConfig(bad), /owners must/, bad);
+});
+
+test('PR template: installed when the repo has none; a repo\'s own is kept, with a note unless it already has the new shape', () => {
+  const base = { '.agents/config.yml': 'owners: [octocat]\n' };
+  const missing = planInit({ reader: memReader(base), defaultBranch: 'main' });
+  const added = missing.ciFiles.find(f => f.path === '.github/pull_request_template.md');
+  assert.equal(added.action, 'create');
+  assert.equal(added.content, template('github/pull_request_template.md'));
+  assert.match(added.content, /^> \[!IMPORTANT\]$/m);
+  assert.ok(!/aldrent|klovr/i.test(added.content), 'repo-neutral');
+  // Each place GitHub looks counts as "has a template".
+  for (const path of ['.github/PULL_REQUEST_TEMPLATE.md', 'docs/pull_request_template.md', 'PULL_REQUEST_TEMPLATE.md', '.github/PULL_REQUEST_TEMPLATE/bug.md']) {
+    const own = planInit({ reader: memReader({ ...base, [path]: '## Summary\n' }), defaultBranch: 'main' });
+    assert.ok(!own.ciFiles.some(f => f.path === '.github/pull_request_template.md'), `${path} is kept`);
+    assert.ok(own.notes.some(n => n.includes(`Kept the repo's PR template ${path.replace(/\/bug\.md$/, '')}`) && /adopt shiplane's/.test(n)), path);
+  }
+  // Already the new shape (shiplane's own, or aldrent's from #1445): kept, no note.
+  const same = planInit({ reader: memReader({ ...base, '.github/pull_request_template.md': added.content }), defaultBranch: 'main' });
+  assert.ok(!same.ciFiles.some(f => f.path === '.github/pull_request_template.md'));
+  assert.ok(!same.notes.some(n => /PR template/.test(n)));
 });

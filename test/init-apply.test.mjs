@@ -64,7 +64,8 @@ test('#9.1/#9.2 init installs dependencies before pushing (the repo\'s gate pass
   const ignore = testGit(bare, ['show', `shiplane/init-v${VERSION}:.gitignore`]);
   assert.equal(ignore, 'node_modules/\n.agents/*\n!.agents/shiplane.lock\n!.agents/shiplane/\n*/**/.agents/\n.agents/state/\n');
   assert.match(client.prs[0].body, /update `\.gitignore`: it ignored shiplane's files; `\.agents\/` -> `\.agents\/\*` `!\.agents\/shiplane\.lock` `!\.agents\/shiplane\/` `\*\/\*\*\/\.agents\/`/);
-  assert.match(client.prs[0].body, /^Needs owner:/);
+  assert.match(client.prs[0].body, /^> \[!IMPORTANT\]\n> \*\*What I need from you:\*\* Needs owner: adopt shiplane/);
+  assert.match(client.prs[1].body, /^> \[!IMPORTANT\]\n> \*\*What I need from you:\*\* Needs owner: add the shiplane events workflow\?/);
   assert.match(testGit(bare, ['show', `shiplane/init-v${VERSION}:AGENTS.md`]), /org:acme\+label:needs-owner,hold/);
 });
 
