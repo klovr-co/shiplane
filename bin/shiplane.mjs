@@ -34,7 +34,8 @@ const USAGE = `shiplane ${VERSION}: every agent PR in its own lane, landed in or
                           follows it, or the last message asks a question no needs-owner PR carries
 
 ship exit codes: 0 merged and deployed · 2 refused (hold, needs-owner, closed, wrong base, hotfix taken)
-                 3 out of the queue (fix and push) · 4 deploy failed · 5 timed out · 1 error`;
+                 3 out of the queue (fix and push; or dequeued twice for a failure not its own) · 4 deploy failed
+                 5 timed out · 1 error · 6 dequeued for its own failure: fix brief in .agents/state/fix-<pr>.md`;
 
 export async function main(argv = process.argv.slice(2)) {
   const [command, ...rest] = withDefaultCommand(argv);
