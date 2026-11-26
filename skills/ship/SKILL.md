@@ -46,11 +46,16 @@ Without being asked, use `--now` only when the ship branch is red, your PR fixes
 |---|---|---|
 | 0 | merged, deploy done (or none configured) | open `liveUrl`, check the changed screens, report once with a screenshot |
 | 2 | refused: `hold`, `needs-owner`, a needsOwner file without `approved`, closed, wrong base, or another PR has `hotfix` | follow `next:`; for needs-owner, ask the one question |
-| 3 | out of the queue: red batch, conflict, or unmet conditions | fix, push (the gate runs), `ship <n> --background` again |
+| 3 | out of the queue: conflict, unmet conditions, taken out by hand, dequeued a second time for a failure not its own, or the job logs could not be read | fix, push (the gate runs), `ship <n> --background` again; for a second not-own dequeue or unread logs, report once |
 | 4 | merged but the deploy failed | open the run; fix forward with a new PR and ship it |
 | 5 | timed out | open the PR's "Mergify Merge Queue" check; report once if you cannot move it |
+| 6 | dequeued for its **own** failure; the fix brief is in `.agents/state/fix-<n>.md` | start a fix worker on a cloud machine (the repo's rule for heavy jobs) with that brief; it fixes the code, never the test, pushes, and runs `ship <n> --background` again. Don't ask the user first. |
 
-On exits 2, 3 and 5 shiplane leaves nothing armed: it removes `queue`/`hotfix` and posts `@mergifyio dequeue` if the PR was queued; `next:` says what it undid. A deploy run that skipped every deploy job reports `deploy steps skipped (path-scoped)`: nothing was deployed, so say so.
+A red batch whose failure is not the PR's own (another PR's files, or infra) is requeued once by `ship` itself, with one comment; you do nothing.
+
+The fix brief contract (exit 6): shiplane writes it and stops; it never starts an agent and never edits or skips a test. The brief has the PR, its head, why the failure is the PR's own, each failing test or error with its output and the PR files it points at, the other failures in the batch, and any job log it could not read. The fix worker works on the PR branch rebased on the ship branch, fixes the code until each listed test passes, runs the pre-push gate, pushes (never `--no-verify`), and runs `ship <n> --background`. It must not skip, quarantine, loosen or edit a test, or raise an allow-list, to get green.
+
+On exits 2, 3, 5 and 6 shiplane leaves nothing armed: it removes `queue`/`hotfix` and posts `@mergifyio dequeue` if the PR was queued; `next:` says what it undid. A deploy run that skipped every deploy job reports `deploy steps skipped (path-scoped)`: nothing was deployed, so say so.
 
 CI runs on Mergify's batch draft, not on the PR, so `gh pr checks <n>` shows nothing: trust `ship`'s line.
 Never end on "I'll check back": the turn-end guard (`guard`, a Stop hook committed in the repo's `.claude/settings.json`
